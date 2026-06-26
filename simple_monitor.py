@@ -9,7 +9,7 @@ import json
 import os
 import smtplib
 import re
-from datetime import datetime, date
+from datetime import datetime, date, timedelta, timezone
 from dataclasses import dataclass
 from typing import List, Set
 
@@ -56,22 +56,23 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ==================== 工具函数 ====================
+def get_beijing_time() -> datetime:
+    """获取当前北京时间（UTC+8）"""
+    return datetime.now(timezone(timedelta(hours=8)))
+
 def should_skip_monitoring() -> tuple[bool, str]:
     """
-    判断是否应该跳过监控（周末或节假日）
+    判断是否应该跳过监控（20:00-06:00跳过）
     
     Returns:
         tuple[bool, str]: (是否跳过, 原因)
     """
-    today = date.today()
-    weekday = today.weekday()  # 0-6, 0是周一，6是周日
+    now = get_beijing_time()
+    hour = now.hour
     
-    # 检查是否是周末
-    if weekday >= 5:  # 5=周六, 6=周日
-        return True, f"今天是周末（{'周六' if weekday == 5 else '周日'}），跳过监控"
-    
-    # TODO: 可以添加节假日判断逻辑
-    # 比如添加一个节假日列表，或者调用节假日API
+    # 20:00 - 06:00 之间跳过监控
+    if hour >= 20 or hour < 6:
+        return True, f"当前时间 {hour:02d}:{now.minute:02d}，处于静默时段（20:00-06:00），跳过监控"
     
     return False, ""
 
@@ -124,13 +125,13 @@ class RuankaoMonitor:
                 return date_match.group()
         except:
             pass
-        return datetime.now().strftime('%Y-%m-%d')
+        return get_beijing_time().strftime('%Y-%m-%d')
     
     def check_score_news(self) -> List[dict]:
         """检查成绩相关新闻（仅显示2026年）"""
         all_news = self.get_work_dynamic_news()
         score_news = []
-        target_year = datetime.now().strftime('%Y')
+        target_year = get_beijing_time().strftime('%Y')
         
         for news in all_news:
             title_lower = news['title'].lower()
@@ -202,7 +203,7 @@ class EmailNotifier:
                 <div style="background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 4px;">
                     <p><strong>工作动态总数:</strong> {len(all_news)} 条</p>
                     <p><strong>成绩相关新闻:</strong> {len(news_list)} 条</p>
-                    <p><strong>检查时间:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                    <p><strong>检查时间:</strong> {get_beijing_time().strftime('%Y-%m-%d %H:%M:%S')}</p>
                 </div>
                 
                 <h3 style="color: #6c757d; margin-top: 20px;">最新工作动态 (前5条)</h3>
@@ -220,7 +221,7 @@ class EmailNotifier:
             <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; color: #6c757d; font-size: 12px;">
                 <p>监控网址: <a href="{Config.WORK_DYNAMIC_URL}" target="_blank" style="color: #007bff;">{Config.WORK_DYNAMIC_URL}</a></p>
                 <p>监控频率: 每 {Config.CHECK_INTERVAL // 60} 分钟检查一次</p>
-                <p>监控时间: 工作日（周末及节假日跳过）</p>
+                <p>静默时段: 20:00 - 06:00（自动跳过）</p>
                 <p>系统状态: 正常运行中</p>
             </div></body></html>
             """
@@ -238,26 +239,55 @@ class EmailNotifier:
             logger.error(f"邮件发送失败: {e}")
             return False
     
-    def send_test_email(self) -> bool:
-        """发送测试邮件"""
+    def send_startup_notification(self) -> bool:
+        """发送启动通知邮件"""
         try:
             from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
             from email.header import Header
             
-            msg = MIMEText('Ruankao Monitor Test Email - System is running\n\nConfig:\n- Interval: 30 minutes\n- Schedule: Workdays only\n- Notification: 163 Email', 'plain', 'utf-8')
+            subject = '[软考监控] 系统已启动'
+            
+            msg = MIMEMultipart()
             msg['From'] = self.config.EMAIL_SENDER
             msg['To'] = self.config.EMAIL_RECEIVER
-            msg['Subject'] = Header('[Ruankao Monitor] Test Email', 'utf-8')
+            msg['Subject'] = Header(subject, 'utf-8')
+            
+            html = f"""
+            <html><body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; text-align: center;">
+                <h1>🚀 软考监控系统已启动</h1>
+            </div>
+            <div style="background: #f8f9fa; padding: 20px; margin: 20px 0; border-radius: 8px;">
+                <h2>系统配置</h2>
+                <p><strong>发送邮箱:</strong> {self.config.EMAIL_SENDER}</p>
+                <p><strong>接收邮箱:</strong> {self.config.EMAIL_RECEIVER}</p>
+                <p><strong>检查频率:</strong> 每 {Config.CHECK_INTERVAL // 60} 分钟</p>
+                <p><strong>静默时段:</strong> 20:00 - 06:00（自动跳过）</p>
+                <p><strong>通知策略:</strong> 启动时通知，发现成绩时通知</p>
+            </div>
+            <div style="background: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                <strong>📋 监控说明</strong>
+                <p style="margin: 10px 0;">系统将持续监控软考官网工作动态区域，当发现成绩相关新闻时会立即发送邮件通知。</p>
+                <p style="margin: 10px 0;">未发现成绩时保持静默，不会发送邮件打扰。</p>
+            </div>
+            <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; color: #6c757d; font-size: 12px;">
+                <p>启动时间: {get_beijing_time().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                <p>监控网址: <a href="{Config.WORK_DYNAMIC_URL}" target="_blank" style="color: #007bff;">{Config.WORK_DYNAMIC_URL}</a></p>
+            </div></body></html>
+            """
+            
+            msg.attach(MIMEText(html, 'html', 'utf-8'))
             
             with smtplib.SMTP_SSL(self.config.SMTP_HOST, self.config.SMTP_PORT, timeout=30) as server:
                 server.login(self.config.EMAIL_SENDER, self.config.EMAIL_PASSWORD)
                 server.sendmail(self.config.EMAIL_SENDER, [self.config.EMAIL_RECEIVER], msg.as_string())
             
-            logger.info("测试邮件发送成功")
+            logger.info("启动通知邮件发送成功")
             return True
             
         except Exception as e:
-            logger.error(f"测试邮件失败: {e}")
+            logger.error(f"启动通知邮件失败: {e}")
             return False
 
 # ==================== 主程序 ====================
@@ -286,36 +316,36 @@ class MonitorAgent:
             with open(self.state_file, 'w', encoding='utf-8') as f:
                 json.dump({
                     'processed_urls': list(self.processed_urls),
-                    'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    'last_check': get_beijing_time().strftime('%Y-%m-%d %H:%M:%S')
                 }, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.error(f"保存状态失败: {e}")
     
     def check_and_notify(self):
-        """检查并发送通知（每次都发送监控报告）"""
+        """检查并发送通知（仅发现成绩时发送邮件）"""
         logger.info("=" * 60)
-        logger.info(f"开始检查... {datetime.now().strftime('%H:%M:%S')}")
+        logger.info(f"开始检查... {get_beijing_time().strftime('%H:%M:%S')}")
         
         try:
-            # 获取所有新闻
-            all_news = self.monitor.get_work_dynamic_news()
-            
             # 获取成绩相关新闻
             score_news = self.monitor.check_score_news()
             
-            # 发送监控报告邮件（无论是否有成绩新闻）
-            logger.info(f"📊 准备发送监控报告: 总新闻 {len(all_news)} 条，成绩新闻 {len(score_news)} 条")
+            # 检查是否有新的成绩新闻
+            new_score_news = [news for news in score_news if news['url'] not in self.processed_urls]
             
-            if self.notifier.send_notification(score_news, all_news):
-                logger.info("✅ 监控报告发送成功")
+            if new_score_news:
+                logger.info(f"🎉 发现 {len(new_score_news)} 条新成绩新闻！")
                 
-                # 如果有新的成绩新闻，更新状态
-                new_score_news = [news for news in score_news if news['url'] not in self.processed_urls]
-                if new_score_news:
-                    logger.info(f"🎉 发现 {len(new_score_news)} 条新成绩新闻！")
+                # 发送邮件通知
+                if self.notifier.send_notification(new_score_news):
+                    logger.info("✅ 成绩通知邮件发送成功")
+                    
+                    # 更新状态
                     for news in new_score_news:
                         self.processed_urls.add(news['url'])
                     self._save_state()
+            else:
+                logger.info(f"🔕 未发现新成绩新闻，静默中...")
                 
         except Exception as e:
             logger.error(f"检查出错: {e}")
@@ -325,10 +355,11 @@ class MonitorAgent:
         logger.info("🚀 软考成绩监控系统启动")
         logger.info(f"📧 {Config.EMAIL_SENDER} -> {Config.EMAIL_RECEIVER}")
         logger.info(f"⏰ 每 {Config.CHECK_INTERVAL // 60} 分钟检查一次")
-        logger.info(f"🚫 周末和节假日自动跳过监控")
+        logger.info(f"🌙 静默时段: 20:00 - 06:00（自动跳过）")
+        logger.info(f"📨 启动时发送通知邮件，发现成绩时发送通知")
         
-        # 发送测试邮件
-        self.notifier.send_test_email()
+        # 发送启动通知邮件
+        self.notifier.send_startup_notification()
         
         # 首次检查
         self.check_and_notify()
