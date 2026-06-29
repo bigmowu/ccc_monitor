@@ -30,19 +30,17 @@ class Config:
     # 软考官网
     RUANKAO_URL = "https://www.ruankao.org.cn"
     WORK_DYNAMIC_URL = "https://www.ruankao.org.cn/index/work.html"
-    
-    # 监控间隔（秒）
-    CHECK_INTERVAL = 1800  # 30分钟
-    
+
     # 成绩关键词
     SCORE_KEYWORDS = ["成绩", "分数", "考试结果", "查询成绩", "成绩发布", "成绩查询", "合格标准"]
-    
-    # 邮件配置（从环境变量读取）
+
+    # 配置（从环境变量读取）
     SMTP_HOST = os.getenv("SMTP_HOST", "smtp.163.com")
     SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
     EMAIL_SENDER = os.getenv("EMAIL_SENDER", "")
     EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
     EMAIL_RECEIVER = os.getenv("EMAIL_RECEIVER", "")
+    CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "300"))  # 默认5分钟
 
 # ==================== 日志配置 ====================
 logging.basicConfig(
@@ -128,7 +126,7 @@ class RuankaoMonitor:
         return get_beijing_time().strftime('%Y-%m-%d')
     
     def check_score_news(self) -> List[dict]:
-        """检查成绩相关新闻（仅显示2026年）"""
+        """检查下半年成绩相关新闻（仅显示2026年下半年）"""
         all_news = self.get_work_dynamic_news()
         score_news = []
         target_year = get_beijing_time().strftime('%Y')
@@ -137,9 +135,13 @@ class RuankaoMonitor:
             title_lower = news['title'].lower()
             news_year = news['date'][:4] if news['date'] else ''
             
-            if news_year == target_year and any(kw.lower() in title_lower for kw in Config.SCORE_KEYWORDS):
+            is_target_year = news_year == target_year
+            has_score_keyword = any(kw.lower() in title_lower for kw in Config.SCORE_KEYWORDS)
+            is_h下半年 = '下半年' in news['title'] or ('上半年' not in news['title'] and has_score_keyword)
+            
+            if is_target_year and has_score_keyword and is_h下半年:
                 score_news.append(news)
-                logger.info(f"发现{target_year}年成绩新闻: {news['title']}")
+                logger.info(f"发现{target_year}年下半年成绩新闻: {news['title']}")
         
         return score_news
 
