@@ -12,10 +12,14 @@ class MonitoringConfig:
     WORK_DYNAMIC_URL: str = "https://www.ruankao.org.cn/index/work.html"
     
     # 监控间隔时间（秒）
-    CHECK_INTERVAL: int = 600  # 10分钟
+    CHECK_INTERVAL: int = 300  # 5分钟
     
     # 成绩相关关键词
     SCORE_KEYWORDS: List[str] = None
+
+    # 监控目标考期（默认2026年下半年）
+    TARGET_YEAR: str = "2026"
+    TARGET_SEMESTER: str = "下半年"
     
     # 邮件配置
     SMTP_HOST: str = "smtp.163.com"
@@ -42,5 +46,7 @@ def get_config() -> MonitoringConfig:
     
     # 监控配置
     config.CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", config.CHECK_INTERVAL))
+    config.TARGET_YEAR = os.getenv("TARGET_YEAR", config.TARGET_YEAR)
+    config.TARGET_SEMESTER = os.getenv("TARGET_SEMESTER", config.TARGET_SEMESTER)
     
     return config

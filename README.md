@@ -1,15 +1,15 @@
 # 软考成绩监控系统
 
-基于Docker的软考成绩监控系统，定期监控软考官网工作动态区域，发现成绩相关新闻时自动发送邮件通知。
+基于Docker的软考成绩监控系统，专门监控**2026年下半年**软考官网工作动态区域，发现成绩/分数相关新闻时自动发送邮件通知。
 
 ## 功能特点
 
-- 🔍 自动监控软考官网工作动态区域
-- 📧 每次检查都发送邮件报告（不会静默）
-- 📅 仅监控当前年份的成绩新闻（避免显示往年旧记录）
+- 🎯 专门检测 **2026年下半年** 的成绩/分数新闻（标题需同时包含目标年份与考期）
+- 📧 发现新成绩新闻时自动发送邮件通知（未发现时静默，不打扰）
+- 🔍 标题关键词匹配 + URL 去重，避免重复通知同一条新闻
 - 🐳 完全Docker化部署，开箱即用
-- ⏰ 可配置监控间隔（默认30分钟）
-- 🚫 周末和节假日自动跳过监控
+- ⏰ 可配置监控间隔（代码默认5分钟，可通过环境变量调整）
+- 🌙 夜间静默时段（20:00 - 06:00）自动跳过监控
 - 📝 详细日志记录
 
 ## 快速开始
@@ -31,12 +31,15 @@ EMAIL_SENDER=your_email@163.com
 EMAIL_PASSWORD=your_authorization_code
 EMAIL_RECEIVER=receiver_email@163.com
 
-CHECK_INTERVAL=1800
+CHECK_INTERVAL=300
+TARGET_YEAR=2026
+TARGET_SEMESTER=下半年
 ```
 
 **重要提示**：
 - `EMAIL_PASSWORD` 不是邮箱登录密码，而是网易邮箱的授权码
 - 获取授权码方法：登录网易邮箱 -> 设置 -> POP3/SMTP/IMAP -> 开启服务 -> 发送短信验证 -> 获取授权码
+- `TARGET_YEAR` / `TARGET_SEMESTER` 可省略，默认即为 `2026` 和 `下半年`
 
 ### 2. 使用Docker启动
 
@@ -65,21 +68,44 @@ docker rm ruankao-monitor
 
 ### 3. 验证运行
 
-系统启动后会自动发送一封测试邮件和监控报告到配置的接收邮箱。
+系统启动后会自动发送一封启动通知邮件，之后仅在发现新的目标成绩新闻时发送通知邮件。
+
+## 环境变量
+
+| 变量名 | 说明 | 默认值 |
+|--------|------|--------|
+| SMTP_HOST | SMTP服务器地址 | smtp.163.com |
+| SMTP_PORT | SMTP端口 | 465 |
+| EMAIL_SENDER | 发件邮箱 | - |
+| EMAIL_PASSWORD | 邮箱授权码 | - |
+| EMAIL_RECEIVER | 收件邮箱 | - |
+| CHECK_INTERVAL | 监控间隔（秒） | 300（5分钟） |
+| TARGET_YEAR | 目标考试年份 | 2026 |
+| TARGET_SEMESTER | 目标考期 | 下半年 |
+
+## 监控范围
+
+系统只匹配**标题同时包含以下要素**的新闻：
+
+1. 目标年份（默认 `2026`）
+2. 目标考期（默认 `下半年`）
+3. 任一成绩关键词（见下方列表）
+
+即标题形如「2026年下半年…成绩…」的新闻才会触发通知。2025年及更早、或2026年上半年的旧新闻会被自动忽略。
 
 ## 系统架构
 
 ```
-┌─────────────────┐    30分钟间隔    ┌─────────────────┐
-│  软考官网监控   │  ──────────────>  │  工作动态检查   │
-│  Agent          │                  │  年份过滤       │
-└─────────────────┘                  └─────────────────┘
-        │                                      │
-        │                                      │
-        ▼                                      ▼
+┌─────────────────┐    CHECK_INTERVAL    ┌─────────────────┐
+│  软考官网监控   │  ────────────────>  │  目标考期过滤   │
+│  Agent          │                     │  2026下半年     │
+└─────────────────┘                     └─────────────────┘
+        │                                        │
+        │                                        │
+        ▼                                        ▼
 ┌─────────────────┐                  ┌─────────────────┐
 │  邮件通知服务   │  <─────────────  │  关键词匹配     │
-│  网易163邮箱    │     发送报告     │  成绩新闻识别   │
+│  网易163邮箱    │     发送通知      │  + URL去重      │
 └─────────────────┘                  └─────────────────┘
 ```
 
@@ -89,6 +115,8 @@ docker rm ruankao-monitor
 |------|----------|
 | 出成绩了 | `[软考监控] 出成绩了！发现 X 条成绩新闻` |
 | 尚未发布 | `[软考监控] 尚未发布 - 本次检查未发现成绩新闻` |
+
+> 注意：当前版本默认仅在**发现新成绩新闻**时发送邮件，未发现时静默，不会每次检查都发送。
 
 ## 监控关键词
 
@@ -101,57 +129,52 @@ docker rm ruankao-monitor
 - 成绩查询
 - 合格标准
 
-如需修改关键词，请编辑 [config.py](config.py) 文件中的 `SCORE_KEYWORDS` 列表。
+如需修改关键词，请编辑 [simple_monitor.py](simple_monitor.py) 文件中的 `SCORE_KEYWORDS` 列表。
 
 ## 文件说明
 
 | 文件 | 说明 |
 |------|------|
-| [simple_monitor.py](simple_monitor.py) | 监控主程序（核心逻辑） |
-| [config.py](config.py) | 配置管理（关键词、URL等） |
+| [simple_monitor.py](simple_monitor.py) | 监控主程序（核心逻辑，Docker 实际运行） |
+| [config.py](config.py) | 备用配置模块（当前主程序内置配置，未直接使用） |
 | [requirements.txt](requirements.txt) | Python依赖列表 |
 | [Dockerfile](Dockerfile) | Docker镜像构建文件 |
 | [run.sh](run.sh) | 一键部署脚本 |
-| [.env](.env) | 邮箱配置文件 |
+| [.env](.env) | 邮箱配置文件（不入库） |
 | [.env.example](.env.example) | 配置模板 |
+| monitor_state.json | 已处理新闻状态（自动生成，建议挂载持久化） |
+| [CHANGELOG.md](CHANGELOG.md) | 变更记录 |
 
 ## 核心代码结构
 
 ### simple_monitor.py
 
 ```python
-# 监控器类
+class Config:
+    TARGET_YEAR       # 目标年份（默认2026）
+    TARGET_SEMESTER   # 目标考期（默认下半年）
+    SCORE_KEYWORDS    # 成绩相关关键词列表
+    CHECK_INTERVAL    # 监控间隔（秒）
+
 class RuankaoMonitor:
     get_work_dynamic_news()     # 获取工作动态新闻列表
-    check_score_news()          # 检查成绩相关新闻（仅当前年份）
+    check_score_news()          # 检测目标考期（2026下半年）成绩新闻
     _extract_date()             # 从新闻中提取日期
 
-# 邮件通知器类
 class EmailNotifier:
-    send_notification()         # 发送监控报告邮件
-    send_test_email()           # 发送测试邮件
+    send_notification()         # 发送成绩通知邮件
+    send_startup_notification() # 发送启动通知邮件
 
-# 主函数
-def main():
-    # 启动监控循环
-    # 每30分钟检查一次
-    # 周末自动跳过
-```
-
-### config.py
-
-```python
-class Config:
-    RUANKAO_URL          # 软考官网地址
-    WORK_DYNAMIC_URL     # 工作动态页面地址
-    SCORE_KEYWORDS       # 成绩相关关键词列表
-    CHECK_INTERVAL       # 监控间隔（秒）
+class MonitorAgent:
+    check_and_notify()          # 检查并通知（仅新成绩新闻时发邮件）
+    run()                       # 监控主循环
 ```
 
 ## 日志和状态
 
 - 容器日志：`docker logs -f ruankao-monitor`
 - 本地日志：`monitor.log`
+- 已处理新闻：`monitor_state.json`（建议通过 `-v $(pwd)/monitor_state.json:/app/monitor_state.json` 挂载持久化）
 
 ## 故障排查
 
@@ -179,6 +202,10 @@ class Config:
 - BeautifulSoup4 - HTML解析
 - smtplib - 邮件发送
 - python-dotenv - 环境变量管理
+
+## 变更记录
+
+详见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 许可证
 

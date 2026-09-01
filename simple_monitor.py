@@ -34,6 +34,10 @@ class Config:
     # 成绩关键词
     SCORE_KEYWORDS = ["成绩", "分数", "考试结果", "查询成绩", "成绩发布", "成绩查询", "合格标准"]
 
+    # 监控目标考期（默认2026年下半年）
+    TARGET_YEAR = os.getenv("TARGET_YEAR", "2026")
+    TARGET_SEMESTER = os.getenv("TARGET_SEMESTER", "下半年")
+
     # 配置（从环境变量读取）
     SMTP_HOST = os.getenv("SMTP_HOST", "smtp.163.com")
     SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
@@ -126,22 +130,21 @@ class RuankaoMonitor:
         return get_beijing_time().strftime('%Y-%m-%d')
     
     def check_score_news(self) -> List[dict]:
-        """检查下半年成绩相关新闻（仅显示2026年下半年）"""
+        """专门检测目标考期（默认2026年下半年）的成绩/分数相关新闻"""
         all_news = self.get_work_dynamic_news()
         score_news = []
-        target_year = get_beijing_time().strftime('%Y')
         
         for news in all_news:
+            title = news['title']
             title_lower = news['title'].lower()
-            news_year = news['date'][:4] if news['date'] else ''
-            
-            is_target_year = news_year == target_year
+
+            # 标题需同时包含目标年份与考期（如"2026年下半年"），并命中成绩关键词
+            is_target_exam = Config.TARGET_YEAR in title and Config.TARGET_SEMESTER in title
             has_score_keyword = any(kw.lower() in title_lower for kw in Config.SCORE_KEYWORDS)
-            is_h下半年 = '下半年' in news['title'] or ('上半年' not in news['title'] and has_score_keyword)
-            
-            if is_target_year and has_score_keyword and is_h下半年:
+
+            if is_target_exam and has_score_keyword:
                 score_news.append(news)
-                logger.info(f"发现{target_year}年下半年成绩新闻: {news['title']}")
+                logger.info(f"发现{Config.TARGET_YEAR}年{Config.TARGET_SEMESTER}成绩新闻: {news['title']}")
         
         return score_news
 
@@ -265,6 +268,7 @@ class EmailNotifier:
                 <p><strong>发送邮箱:</strong> {self.config.EMAIL_SENDER}</p>
                 <p><strong>接收邮箱:</strong> {self.config.EMAIL_RECEIVER}</p>
                 <p><strong>检查频率:</strong> 每 {Config.CHECK_INTERVAL // 60} 分钟</p>
+                <p><strong>监控范围:</strong> {Config.TARGET_YEAR}年{Config.TARGET_SEMESTER}成绩/分数新闻</p>
                 <p><strong>静默时段:</strong> 20:00 - 06:00（自动跳过）</p>
                 <p><strong>通知策略:</strong> 启动时通知，发现成绩时通知</p>
             </div>
@@ -357,6 +361,7 @@ class MonitorAgent:
         logger.info("🚀 软考成绩监控系统启动")
         logger.info(f"📧 {Config.EMAIL_SENDER} -> {Config.EMAIL_RECEIVER}")
         logger.info(f"⏰ 每 {Config.CHECK_INTERVAL // 60} 分钟检查一次")
+        logger.info(f"🎯 监控范围: {Config.TARGET_YEAR}年{Config.TARGET_SEMESTER}成绩/分数新闻")
         logger.info(f"🌙 静默时段: 20:00 - 06:00（自动跳过）")
         logger.info(f"📨 启动时发送通知邮件，发现成绩时发送通知")
         
