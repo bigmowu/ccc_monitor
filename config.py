@@ -12,7 +12,7 @@ class MonitoringConfig:
     WORK_DYNAMIC_URL: str = "https://www.ruankao.org.cn/index/work.html"
     
     # 监控间隔时间（秒）
-    CHECK_INTERVAL: int = 300  # 5分钟
+    CHECK_INTERVAL: int = 600  # 10分钟
     
     # 成绩相关关键词
     SCORE_KEYWORDS: List[str] = None
