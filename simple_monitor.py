@@ -474,6 +474,82 @@ class EmailNotifier:
             logger.error(f"停止通知邮件发送失败: {e}")
             return False
     
+    def send_daily_open(self) -> bool:
+        """每日开启监控报告 (05:59 发送)"""
+        try:
+            subject = '[软考监控] 🌅 今日监控开启'
+            
+            html = f"""
+            <html><body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 20px; border-radius: 8px; text-align: center;">
+                <h1>🌅 今日监控开启</h1>
+            </div>
+            <div style="background: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                <strong>今日监控开启，服务存活 ✅</strong>
+            </div>
+            <div style="background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 8px;">
+                <p style="margin: 5px 0;"><strong>日期:</strong> {get_beijing_time().strftime('%Y-%m-%d')}</p>
+                <p style="margin: 5px 0;"><strong>当前时间:</strong> {get_beijing_time().strftime('%H:%M:%S')}</p>
+                <p style="margin: 5px 0;"><strong>运行状态:</strong> 正常 ✅</p>
+            </div>
+            <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; color: #6c757d; font-size: 12px;">
+                <p>监控网址: <a href="{Config.WORK_DYNAMIC_URL}" target="_blank" style="color: #007bff;">{Config.WORK_DYNAMIC_URL}</a></p>
+                <p>每 {Config.CHECK_INTERVAL // 60} 分钟检查一次 · 静默时段 20:00-06:00</p>
+            </div>
+            </body></html>
+            """
+            
+            logger.info("🌅 每日开启监控报告已发送")
+            return self._send_email(subject, html)
+        except Exception as e:
+            logger.error(f"每日开启监控报告发送失败: {e}")
+            return False
+    
+    def send_daily_summary(self, found_new: bool) -> bool:
+        """每日总结报告 (19:59 发送)
+
+        Args:
+            found_new: 今天是否发现过新内容
+        """
+        try:
+            now = get_beijing_time()
+            summary_text = "有新消息" if found_new else "无新消息"
+            subject = f'[软考监控] 🌙 今日总结：{summary_text}'
+            
+            html = f"""
+            <html><body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 20px; border-radius: 8px; text-align: center;">
+                <h1>🌙 今日总结</h1>
+            </div>
+            <div style="background: {"#fff3cd; border-left: 4px solid #ffc107" if found_new else "#d4edda; border-left: 4px solid #28a745"}; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                <strong>{"📬 今日发现新消息" if found_new else "✅ 今日总结：无新消息，服务存活"}</strong>
+            </div>
+            <div style="background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 8px;">
+                <p style="margin: 5px 0;"><strong>日期:</strong> {now.strftime('%Y-%m-%d')}</p>
+                <p style="margin: 5px 0;"><strong>当前时间:</strong> {now.strftime('%H:%M:%S')}</p>
+                <p style="margin: 5px 0;"><strong>今日状态:</strong> {summary_text}</p>
+                <p style="margin: 5px 0;"><strong>服务存活:</strong> ✅ 是</p>
+            </div>
+            <div style="background: #e2e3e5; border-left: 4px solid #6c757d; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                <strong>🌙 系统转入静默时间段</strong>
+                <p style="margin: 10px 0; font-size: 13px; color: #555;">
+                    监控已转入静默时段（20:00 - 06:00），期间不再主动检查。<br>
+                    明天 05:59 将发送开启监控报告，06:00 恢复正常检查节奏。
+                </p>
+            </div>
+            <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; color: #6c757d; font-size: 12px;">
+                <p>监控网址: <a href="{Config.WORK_DYNAMIC_URL}" target="_blank" style="color: #007bff;">{Config.WORK_DYNAMIC_URL}</a></p>
+                <p>每 {Config.CHECK_INTERVAL // 60} 分钟检查一次 · 静默时段 20:00-06:00</p>
+            </div>
+            </body></html>
+            """
+            
+            logger.info(f"🌙 每日总结报告已发送（今日: {summary_text}）")
+            return self._send_email(subject, html)
+        except Exception as e:
+            logger.error(f"每日总结报告发送失败: {e}")
+            return False
+    
     def send_baseline_notification(self, all_news: List[dict]) -> bool:
         """
         首次运行快照建立通知
@@ -571,6 +647,10 @@ class MonitorAgent:
         self._stop_requested = False
         self._stop_reason = ""
         
+        # === 每日心跳状态 ===
+        self._found_new_today = False              # 今天是否发现过新内容（用于总结报告）
+        self._last_hb_date = None                  # 上次发心跳的日期（防止重复发）
+        
         # 注册信号处理器
         self._setup_signal_handlers()
     
@@ -660,6 +740,7 @@ class MonitorAgent:
                 # 发送新内容通知邮件
                 if self.notifier.send_new_content_notification(new_items, all_news):
                     logger.info("✅ 新内容通知邮件发送成功")
+                    self._found_new_today = True
                     
                     # 更新已见URL集合
                     for news in new_items:
@@ -672,6 +753,43 @@ class MonitorAgent:
                 
         except Exception as e:
             logger.error(f"检查出错: {e}")
+    
+    def _check_heartbeat(self):
+        """检查是否到达每日心跳窗口并发送邮件
+        
+        05:58-06:00 → 发送开启监控报告
+        19:58-20:00 → 发送每日总结报告
+        每天每种只发一次（用 _last_hb_date 防重复）
+        """
+        now = get_beijing_time()
+        today_str = now.strftime('%Y-%m-%d')
+        
+        # 跨日重置（如果 _last_hb_date 已过，说明是新的一天）
+        if self._last_hb_date != today_str:
+            # 新的一天，重置"今日发现新内容"标记
+            self._found_new_today = False
+        
+        hour_minute = now.hour * 60 + now.minute  # 转成当天第几分钟
+        open_window = (5 * 60 + 58, 6 * 60 + 0)    # 05:58 ~ 06:00
+        summary_window = (19 * 60 + 58, 20 * 60 + 0)  # 19:58 ~ 20:00
+        
+        if self._last_hb_date == today_str:
+            # 今天已经发过心跳了，跳过
+            return
+        
+        # 开启监控报告窗口
+        if open_window[0] <= hour_minute <= open_window[1]:
+            logger.info(f"🌅 到达开启监控窗口 ({now.strftime('%H:%M:%S')})")
+            self.notifier.send_daily_open()
+            self._last_hb_date = today_str
+            return
+        
+        # 每日总结报告窗口
+        if summary_window[0] <= hour_minute <= summary_window[1]:
+            logger.info(f"🌙 到达每日总结窗口 ({now.strftime('%H:%M:%S')})")
+            self.notifier.send_daily_summary(self._found_new_today)
+            self._last_hb_date = today_str
+            return
     
     def run(self):
         """运行监控"""
@@ -697,16 +815,28 @@ class MonitorAgent:
             while not self._stop_requested:
                 # 分段 sleep，便于快速响应停止信号
                 sleep_remaining = Config.CHECK_INTERVAL
-                check_interval = 5  # 每5秒检查一次停止信号
+                check_interval = 5  # 每5秒检查一次停止信号 + 心跳窗口
                 
                 while sleep_remaining > 0 and not self._stop_requested:
                     sleep_time = min(check_interval, sleep_remaining)
                     time.sleep(sleep_time)
                     sleep_remaining -= sleep_time
+                    
+                    # 每 5 秒也检查一下心跳窗口（精确捕获 05:59 / 19:59）
+                    try:
+                        self._check_heartbeat()
+                    except Exception as e:
+                        logger.error(f"心跳检查异常（忽略）: {e}")
                 
                 if self._stop_requested:
                     stop_reason = self._stop_reason or "收到停止信号"
                     break
+                
+                # 主循环头部也检查一次心跳（防止刚进入循环就错过窗口）
+                try:
+                    self._check_heartbeat()
+                except Exception as e:
+                    logger.error(f"心跳检查异常（忽略）: {e}")
                 
                 # 检查是否应该跳过监控
                 should_skip, reason = should_skip_monitoring()
