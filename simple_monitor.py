@@ -649,7 +649,8 @@ class MonitorAgent:
         
         # === 每日心跳状态 ===
         self._found_new_today = False              # 今天是否发现过新内容（用于总结报告）
-        self._last_hb_date = None                  # 上次发心跳的日期（防止重复发）
+        self._last_open_date = None                # 上次发开启报告的日期（防重复）
+        self._last_summary_date = None             # 上次发总结报告的日期（防重复）
         
         # 注册信号处理器
         self._setup_signal_handlers()
@@ -759,13 +760,14 @@ class MonitorAgent:
         
         05:58-06:00 → 发送开启监控报告
         19:58-20:00 → 发送每日总结报告
-        每天每种只发一次（用 _last_hb_date 防重复）
+        每种每天只发一次（各自独立用 _last_open_date / _last_summary_date 防重复）
         """
         now = get_beijing_time()
         today_str = now.strftime('%Y-%m-%d')
         
-        # 跨日重置（如果 _last_hb_date 已过，说明是新的一天）
-        if self._last_hb_date != today_str:
+        # 跨日重置 _found_new_today（开启报告在早上，总结在晚上，
+        # 所以以日期为单位，每次检查到新日期就重置）
+        if self._last_open_date != today_str and self._last_summary_date != today_str:
             # 新的一天，重置"今日发现新内容"标记
             self._found_new_today = False
         
@@ -773,22 +775,20 @@ class MonitorAgent:
         open_window = (5 * 60 + 58, 6 * 60 + 0)    # 05:58 ~ 06:00
         summary_window = (19 * 60 + 58, 20 * 60 + 0)  # 19:58 ~ 20:00
         
-        if self._last_hb_date == today_str:
-            # 今天已经发过心跳了，跳过
-            return
-        
         # 开启监控报告窗口
         if open_window[0] <= hour_minute <= open_window[1]:
-            logger.info(f"🌅 到达开启监控窗口 ({now.strftime('%H:%M:%S')})")
-            self.notifier.send_daily_open()
-            self._last_hb_date = today_str
+            if self._last_open_date != today_str:
+                logger.info(f"🌅 到达开启监控窗口 ({now.strftime('%H:%M:%S')})")
+                self.notifier.send_daily_open()
+                self._last_open_date = today_str
             return
         
         # 每日总结报告窗口
         if summary_window[0] <= hour_minute <= summary_window[1]:
-            logger.info(f"🌙 到达每日总结窗口 ({now.strftime('%H:%M:%S')})")
-            self.notifier.send_daily_summary(self._found_new_today)
-            self._last_hb_date = today_str
+            if self._last_summary_date != today_str:
+                logger.info(f"🌙 到达每日总结窗口 ({now.strftime('%H:%M:%S')})")
+                self.notifier.send_daily_summary(self._found_new_today)
+                self._last_summary_date = today_str
             return
     
     def run(self):
