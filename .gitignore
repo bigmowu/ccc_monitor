@@ -43,7 +43,6 @@ logs/
 monitor_state.json
 
 # Docker
-.dockerignore
 
 # 操作系统
 .DS_Store

@@ -475,7 +475,7 @@ class EmailNotifier:
             return False
     
     def send_daily_open(self) -> bool:
-        """每日开启监控报告 (05:59 发送)"""
+        """每日开启监控报告 (08:15 发送)"""
         try:
             subject = '[软考监控] 🌅 今日监控开启'
             
@@ -534,7 +534,7 @@ class EmailNotifier:
                 <strong>🌙 系统转入静默时间段</strong>
                 <p style="margin: 10px 0; font-size: 13px; color: #555;">
                     监控已转入静默时段（20:00 - 06:00），期间不再主动检查。<br>
-                    明天 05:59 将发送开启监控报告，06:00 恢复正常检查节奏。
+                    明天 08:15 将发送开启监控报告，06:00 恢复正常检查节奏。
                 </p>
             </div>
             <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; color: #6c757d; font-size: 12px;">
@@ -758,7 +758,7 @@ class MonitorAgent:
     def _check_heartbeat(self):
         """检查是否到达每日心跳窗口并发送邮件
         
-        05:58-06:00 → 发送开启监控报告
+        08:15-08:16 → 发送开启监控报告
         19:58-20:00 → 发送每日总结报告
         每种每天只发一次（各自独立用 _last_open_date / _last_summary_date 防重复）
         """
@@ -772,7 +772,7 @@ class MonitorAgent:
             self._found_new_today = False
         
         hour_minute = now.hour * 60 + now.minute  # 转成当天第几分钟
-        open_window = (5 * 60 + 58, 6 * 60 + 0)    # 05:58 ~ 06:00
+        open_window = (8 * 60 + 15, 8 * 60 + 16)   # 08:15 ~ 08:16
         summary_window = (19 * 60 + 58, 20 * 60 + 0)  # 19:58 ~ 20:00
         
         # 开启监控报告窗口
@@ -822,7 +822,7 @@ class MonitorAgent:
                     time.sleep(sleep_time)
                     sleep_remaining -= sleep_time
                     
-                    # 每 5 秒也检查一下心跳窗口（精确捕获 05:59 / 19:59）
+                    # 每 5 秒也检查一下心跳窗口（精确捕获 08:15 / 19:59）
                     try:
                         self._check_heartbeat()
                     except Exception as e:

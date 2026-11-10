@@ -1,0 +1,23 @@
+# 版本控制与本地环境
+.git/
+.gitignore
+venv/
+__pycache__/
+*.py[cod]
+
+# 敏感配置与运行时产物
+.env
+*.log
+monitor_state.json
+data/
+
+# 系统与编辑器文件
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# 文档与测试（镜像内不需要）
+*.md
+test_system.py

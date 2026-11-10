@@ -1,0 +1,30 @@
+services:
+  ruankao-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ruankao-monitor:latest
+    container_name: ruankao-monitor
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    environment:
+      - TZ=Asia/Shanghai
+
+    # 程序会把 monitor_state.json / monitor.log 写到工作目录
+    working_dir: /data
+    command: ["python", "/app/simple_monitor.py"]
+    volumes:
+      # 群晖宿主机目录 -> 容器数据目录（状态文件、日志持久化）
+      - /volume1/docker/ruankao/data:/data
+
+    # 停止时留出时间发送停运通知邮件
+    stop_grace_period: 30s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
